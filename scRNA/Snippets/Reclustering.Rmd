@@ -1,0 +1,77 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Reclustering of cells
+```{r}
+Idents(combined) <- 'seurat_clusters'
+DefaultAssay(combined) <- 'RNA'
+reduced <- SubsetData(combined, ident.remove=c(0,1,2)) #List of clusters to remove
+```
+```{r}
+reduced.list <- SplitObject(reduced, split.by='samp')
+for (i in 1:length(reduced.list)){
+  reduced.list[[i]] <- SCTransform(reduced.list[[i]], verbose=FALSE)
+}
+
+reduced.features <- SelectIntegrationFeatures(object.list=reduced.list, nfeatures=3000);
+reduced.list <- PrepSCTIntegration(object.list=reduced.list, anchor.features=reduced.features, verbose=FALSE);
+reduced.anchors <- FindIntegrationAnchors(object.list=reduced.list, normalization.method='SCT', anchor.features=reduced.features, verbose=FALSE);
+reduced <- IntegrateData(anchorset=reduced.anchors, normalization.method='SCT');
+
+```
+```{r}
+reduced <- RunPCA(reduced, verbose=FALSE, npcs=30);
+reduced <- RunUMAP(reduced, reduction='pca', dims=1:10); 
+reduced <- FindNeighbors(reduced, reduction='pca', dims=1:10); 
+reduced <- FindClusters(reduced,resolution=0.2); 
+DimPlot(reduced, reduction='umap', label=TRUE); 
+
+```
+
+```{r}
+jpeg('./reclust/umap_split.jpg',height=800, width=1500)
+DimPlot(reduced, reduction='umap',split.by='samp')
+dev.off()
+
+jpeg('./reclust/umap.jpg',height=800, width=1500)
+p1 <- DimPlot(reduced, reduction='umap', group.by='samp');
+p2 <- DimPlot(reduced, reduction='umap', label=TRUE, repel=TRUE);
+plot_grid(p1,p2); 
+dev.off()
+
+jpeg('./reclust/umap_solo.jpg',height=800, width=1500)
+plot <- DimPlot(reduced, reduction='umap', label=TRUE, repel=TRUE, pt.size=2)
+print(plot)
+dev.off()
+```
+
+```{r}
+write.table(table(Idents(reduced),reduced$samp), file='./reclust/clustering/counts_per_cluster.txt',sep='\t')
+p1 <- DimPlot(reduced, reduction='umap', group.by='samp');
+p2 <- DimPlot(reduced, reduction='umap', label=TRUE); 
+jpeg('./reclust/clustering/umap.jpg',height=800, width=1500)
+plot_grid(p1,p2); 
+dev.off()
+jpeg('./reclust/clustering/umap_samples.jpg',height=800, width=1500)
+DimPlot(reduced, reduction='umap',split.by='samp');
+dev.off()
+```
+```{r}
+clustnum <- nrow(table(Idents(reduced),reduced$samp))
+for (i in 0:(clustnum-1)){
+  clust.markers <- FindConservedMarkers(reduced, ident.1=i, grouping.var='samp', print.bar=FALSE)
+  write.csv(clust.markers, file=paste('./reclust/cluster_markers/clust',i,'.csv',sep=''))
+  assign(paste('clust', i,'.markers', sep=''), clust.markers)
+  rm(clust.markers)
+  }
+
+
+```
+
+

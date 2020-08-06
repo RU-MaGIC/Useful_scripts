@@ -1,0 +1,20 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+Idents(combined) <- 'seurat_clusters'
+new.cluster.ids <- c('LIST_OUT_CLUSTER_NAME')
+names(new.cluster.ids) <- levels(combined)
+combined <- RenameIdents(combined, new.cluster.ids)
+
+jpeg('./umap_gene_labelled.jpg',height=800, width=1500)
+DimPlot(combined, reduction='umap', label=TRUE, label.size=6, pt.size=1.5)+ NoLegend()
+dev.off()
+
+```

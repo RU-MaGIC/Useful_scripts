@@ -1,0 +1,52 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(Seurat);
+```
+```{r}
+library(msigdbr)
+library(fgsea)
+library(dplyr)
+library(ggplot2)
+library(tibble)
+
+#Set this to whichever category or genome you are using for GSEA. Msigdb google to find
+h_df <- msigdbr(species='Mus musculus', category='H')
+```
+```{r}
+h_fgsea_sets <- h_df %>% split(x=.$gene_symbol, f=.$gs_name)
+
+```
+```{r}
+for (i in 0:(clustnum-1)){
+  for (samp in list('Condition')){#Add after condition the list of different samples to compare to control
+    run <- try({
+      clust_cross.markers <- FindMarkers(reduced, ident.1=paste(samp), ident.2='Control', group.by='samp', subset.ident=i, test.use='roc', logfc.threshold = 0, min.pct=0)
+      write.csv(clust_cross.markers, paste('./reclustering/gsea/cluster_cross_',samp,'_vs_sample1_cluster_',i,'.csv', sep=''))
+      assign(paste('cluster_Cross_',samp,'_vs_Control_cluster_', i,'.markers', sep=''), clust_cross.markers)
+      
+      #do the rest of it. 
+      clust_cross.markers <- clust_cross.markers %>% rownames_to_column('gene')
+      out.genes <- clust_cross.markers %>% dplyr::arrange(desc(myAUC)) %>% dplyr::select(gene,myAUC)
+      ranks <- deframe(out.genes)
+      
+      h_fgseaRes <- fgsea(h_fgsea_sets, stats=ranks, nperm=1000)
+      
+      h_fgseaResTidy <- h_fgseaRes %>% as_tibble() %>% arrange(desc(NES))
+      #h_fgseaResTidy %>% dplyr::select(-leadingEdge, -ES, -nMoreExtreme) %>% arrange(padj) %>% head()
+      jpeg(paste('./reclustering/gsea/h_collection_NESbarplot_',samp,'_vs_sample1_cluster_',i,'.jpg',sep=''), height=750, width=800)
+      plot <- ggplot(h_fgseaResTidy %>% filter(padj < 0.05) %>% head(n=20), aes(reorder(pathway, NES), NES)) + geom_col(aes(fill=NES < 1)) + coord_flip()+ labs(x='Pathway', y='Normalized Enrichment Score', title='Pathways from GSEA') + theme_minimal()
+      print(plot)
+      dev.off()
+    })
+    if(inherits(run, 'try-error')) {next}
+    }
+}
+
+```

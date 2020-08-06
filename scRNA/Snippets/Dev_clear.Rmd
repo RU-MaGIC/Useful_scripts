@@ -1,0 +1,16 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```
+#handy to clear out  the dev list
+```{r}
+for (i in dev.list()[1]:dev.list()[length(dev.list())]) {
+   dev.off()
+}
+```

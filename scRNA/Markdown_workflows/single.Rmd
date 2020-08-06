@@ -1,0 +1,149 @@
+---
+title: "template"
+author: "Lemenze"
+date: "mm/dd/yyyy"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# R execution for Seurat
+Below is the standard execution for 10X single cells libraries processed through cellrangerv3. 
+## Libraries
+```{r}
+library(Seurat);library(dplyr);library(hdf5r);library(cowplot);
+```
+```{r}
+sessionInfo();
+```
+## generating the sample list
+```{r}
+opt <- read.csv(file='metadata.csv')
+samplelist <- list()
+dir.create('QC');
+dir.create('clustering');
+dir.create('cluster_markers');
+dir.create('Gene_figures');
+
+```
+
+```{r}
+options(future.globals.maxSize=10000*1024^2);
+cellcounts <- data.frame(matrix(ncol=2,nrow=0)); colnames(cellcounts) <- c('type','count')
+for (i in 1:nrow(opt)){
+   row <- opt[i,]
+   filename <- row$samples
+   samp <- row$name
+   samp<-paste(samp)
+   
+   directory <- row$directory
+   
+    ###Import raw data
+    data_in <- Read10X_h5(filename=paste(directory,filename,sep=''), use.names=TRUE, unique.features=TRUE);
+    
+    ###Create Seurat object
+    s <- CreateSeuratObject(counts=data_in, project=,min.cells=3, min.features=200);
+    
+    ### Add metadata tags
+    s@meta.data$samp <- paste(samp);
+    
+    ### Mitochondrial
+    ### Do note- if this is human based you need "^MT-", for mouse its "^mt-"
+    s[['percent.mito']] <- PercentageFeatureSet(s, pattern='^mt-');
+    
+    ### Ribosomal
+    s[['percent.ribo']] <- PercentageFeatureSet(s,pattern='^Rp[sl][[:digit:]]');
+    
+    ## Visualize pre-filter
+    ### Scatter plots
+    jpeg(paste('./QC/',samp,'_pre_filt_geneplot_qc.jpg',sep=''))
+    in_plot <- FeatureScatter(s, feature1='nCount_RNA',feature2='nFeature_RNA');
+    par(mfrow=c(2,2))
+    print(in_plot)
+    dev.off()
+    
+    ### Violin/Dot plots
+    jpeg(paste('./QC/',samp,'_pre_filt_vln_qc.jpg',sep=''))
+    in_plot <- VlnPlot(s, features=c('nFeature_RNA','nCount_RNA','percent.mito','percent.ribo'),ncol=4);
+    print(in_plot)
+    dev.off()
+
+     ###Cell count pre-filter
+    cellcounts[nrow(cellcounts)+1,] <- list(sample=paste(samp, '_prefilt',sep=''), count=length(WhichCells(s)))
+    
+    ## Filter
+    ## These can be adjusted as needed, but this is a good general start pattern based on V3 chemistry
+    s <- subset (s, subset= nFeature_RNA < 7000 & percent.mito < 10 & percent.ribo < 45 nFeature_RNA > 1000);
+    
+    ### Violin/Dot plots
+    jpeg(paste('./QC/',samp,'_post_filt_vln_qc.jpg',sep=''))
+    out_plot <- VlnPlot(s, features=c('nFeature_RNA','nCount_RNA','percent.mito','percent.ribo'),ncol=4);
+    print(out_plot)
+    dev.off()
+    ### Scatter plots
+    jpeg(paste('./QC/',samp,'_post_filt_geneplot_qc.jpg',sep=''))
+    out_plot <- FeatureScatter(s, feature1='nCount_RNA',feature2='nFeature_RNA');
+    print(out_plot)
+    dev.off()
+    ###Cell count post-filter
+    cellcounts[nrow(cellcounts)+1,] <- list(sample=paste(samp, '_postfilt',sep=''), count=length(WhichCells(s)))
+    
+    ## Transform and regress the data
+    s <- SCTransform(s, vars.to.regress=c('percent.mito','percent.ribo'));
+    
+    s <- RunPCA(s, verbose=FALSE, npcs=30)
+    s<- JackStraw(s, num.replicate=100)
+    s<- ScoreJackStraw(s, dims=1:20)
+    jpeg('jackstraw.jpg')
+    out_plot <- JackStrawPlot(s, dims=1:20)
+    print(out_plot)
+    dev.off()
+    
+    s <- FindNeighbors(s,reduction='pca', dims=1:10)
+    s <- FindClusters(s, resolution=0.5)
+    s <- RunUMAP(s, reduction='pca', dims=1:10)
+    
+    p1 <- DimPlot(s, reduction='umap',label=TRUE)
+    jpeg('./clustering/umap_samples.jpg')
+    print(p1)
+    dev.off()
+    
+    cluster.markers <- FindAllMarkers(s, min.pct=0.1)
+    cluster.markers %>% group_by(cluster)
+    
+    write.table(cluster.markers,'./cluster_markers/markers.txt',sep='\t')
+
+    write.table(table(Idents(s),s$samp), file='./clustering/counts_per_cluster.txt',sep='\t')
+    clustnum <- nrow(table(Idents(s),s$samp))
+    
+    ## Rename temp files
+    assign(paste(samp, '.data', sep=''), data_in);
+    assign(paste(samp),s);
+}
+write.table(cellcounts, './QC/cellcounts_prepost_filter.txt',sep='\t')
+```
+```{r}
+top10 <- cluster.markers %>% group_by(cluster) %>% top_n(n=10, wt=avg_logFC)
+DefaultAssay(s) <- 'SCT'
+      genelist <- c(top10$gene)
+      for (gene in genelist){
+        run <- try({
+        jpeg(paste('./Gene_figures/',gene,'_vln_clusts.jpg',sep=''))
+        plot <- VlnPlot(s, features=c(gene))
+        print(plot)
+        dev.off()
+        
+        jpeg(paste('./Gene_figures/',gene,'_feature_plot.jpg',sep=''))
+        plot <- FeaturePlot(s, features=c(gene), min.cutoff='q9')
+        print(plot)
+        dev.off()}
+        )
+        if(inherits(run, 'try-error')) { next }
+      }
+```
+```{r}
+save.image('data.RData')
+print('Fin')
+```
