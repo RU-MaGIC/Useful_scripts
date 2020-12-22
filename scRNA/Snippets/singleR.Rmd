@@ -1,0 +1,24 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(SingleR);
+#Dbs from celldex
+#se <- HumanPrimaryCellAtlasData() #human base
+#se <- DatabaseImmuneCellExpressionData() #human DICE
+# se <- NovershternHematopoieticData() #human hematopoesis
+# se <- MonacoImmuneData() # monaco human immune 
+# se <- BlueprintEncodeData() # human blueprint and encode projects- stroma and immune
+se <- MouseRNAseqData() #General mouse
+#se <- ImmGenData() #mouse immgen- super fine resolution for fine labels
+test <- SingleR(test=as.SingleCellExperiment(combined),ref=se, assay.type.test=1, labels=se$label.main) #label.main or label.fine can be used too
+combined$SingleR.calls <- test$labels
+DimPlot(combined, reduction='umap', group.by='SingleR.calls', label=TRUE, repel=TRUE)+ NoLegend()
+
+```
